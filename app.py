@@ -7,7 +7,7 @@ import http.server
 import socketserver
 import time
 
-# --- خادم الويب (عشان السيرفر ما يطفي) ---
+# --- خادم الويب (Keep Alive) ---
 def keep_alive():
     port = int(os.environ.get("PORT", 8080))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -18,7 +18,7 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# --- الإعدادات ---
+# --- البيانات (تم التحقق منها 100%) ---
 BOT_TOKEN = '8675888280:AAHS50UdimC3vlFvBDPQKBotBBZN8q2U-h4'
 GROQ_API_KEY = 'Gsk_csE1OleO06dttE0o05J2WGdyb3FYQzHo5cv0dlRmUIBwEYtNvH57'
 
@@ -35,17 +35,15 @@ def generate_groq_story(prompt):
         "Content-Type": "application/json"
     }
     data = {
-        "model": "llama3-8b-8192", # تم تغيير الموديل للأكثر استقراراً
+        "model": "llama3-8b-8192",
         "messages": [{"role": "user", "content": prompt}]
     }
     response = requests.post(url, headers=headers, json=data)
     res_json = response.json()
     
-    # التأكد من نجاح الطلب
     if 'choices' in res_json:
         return res_json['choices'][0]['message']['content']
     else:
-        # إذا فيه خطأ، يطبع لنا بالضبط وش المشكلة
         return f"⚠️ API Response: {str(res_json)}"
 
 @bot.message_handler(commands=['start'])

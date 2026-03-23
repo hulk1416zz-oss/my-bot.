@@ -32,22 +32,20 @@ def handle_query(call):
     url = user_links.get(call.message.chat.id)
     if not url: return
 
+    # --- خيار الملخص ---
     if call.data == "pdf":
         bot.send_message(call.message.chat.id, "⏳ Generating Summary...")
         try:
-            # استخراج الـ ID
             v_id = url.split("v=")[1].split("&")[0] if "v=" in url else url.split("/")[-1].split("?")[0]
             
-            # --- الحل الجذري للمشكلة ---
-            # استخدام الطريقة الجديدة كلياً للمكتبة بعد التحديث
-            api = YouTubeTranscriptApi()
-            transcript_list = api.list(v_id)
-            transcript = transcript_list.find_transcript(['en'])
+            # التعديل الجديد: سحب أول لغة متوفرة أياً كانت
+            transcript_list = YouTubeTranscriptApi.list_transcripts(v_id)
+            transcript = next(iter(transcript_list)) 
             data = transcript.fetch()
-            # --------------------------
             
             text = " ".join([i['text'] for i in data])
             
+            # تلخيصها باللغة الإنجليزية
             res = model.generate_content(f"Summarize this in English with bullet points: {text[:25000]}")
             
             file_name = f"Summary_{v_id}.txt"
@@ -58,18 +56,25 @@ def handle_query(call):
                 bot.send_document(call.message.chat.id, f, caption="✅ Summary Done!")
             os.remove(file_name)
         except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ Error extracting transcript. Details: {str(e)[:50]}")
+            bot.send_message(call.message.chat.id, f"❌ PDF Error: Video might not have any subtitles.")
 
+    # --- خيار الصوت ---
     elif call.data == "audio":
-        bot.send_message(call.message.chat.id, "⏳ Extracting Audio...")
+        bot.send_message(call.message.chat.id, "⏳ Extracting Audio... (Bypassing YouTube Block)")
         try:
-            opts = {'format': 'bestaudio/best', 'outtmpl': 'song.mp3', 'noplaylist': True}
+            # التعديل الجديد: خدعة لتجاوز حظر يوتيوب للسيرفرات
+            opts = {
+                'format': 'bestaudio/best', 
+                'outtmpl': 'song.mp3', 
+                'noplaylist': True,
+                'extractor_args': {'youtube': {'player_client': ['android', 'web']}} 
+            }
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
             with open('song.mp3', 'rb') as f:
                 bot.send_audio(call.message.chat.id, f)
             os.remove('song.mp3')
         except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ Audio error. Details: {str(e)[:50]}")
+            bot.send_message(call.message.chat.id, f"❌ Audio Error: YouTube security is too high for free servers.")
 
 bot.polling(none_stop=True)

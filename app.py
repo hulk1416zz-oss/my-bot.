@@ -1,11 +1,12 @@
 import telebot
+from telebot import types
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
 from fpdf import FPDF
+import yt_dlp
 import os
-import re
 
-# --- الإعدادات ---
+# --- Setup ---
 BOT_TOKEN = '8650413337:AAGsT4LjOfQUuOT_tP8-9tdio2dg71OuqTE'
 GEMINI_API_KEY = 'AIzaSyB_Q2nleMzyVncqfwgnrTSEnaO4r4jr0JY'
 
@@ -13,53 +14,82 @@ bot = telebot.TeleBot(BOT_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-pro')
 
-# دالة لاستخراج ID الفيديو من الرابط
-def get_video_id(url):
-    pattern = r'(?:v=|\/)([0-9A-Za-z_-]{11}).*'
-    match = re.search(pattern, url)
-    return match.group(1) if match else None
+user_data = {} # لحفظ الرابط مؤقتاً لكل مستخدم
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "🎯 أهلاً بك! أرسل لي رابط فيديو يوتيوب وسأقوم بتحويله إلى ملخص PDF احترافي فوراً.")
+    bot.reply_to(message, "👋 Welcome! Send me a YouTube link to start.")
 
 @bot.message_handler(func=lambda message: 'youtube.com' in message.text or 'youtu.be' in message.text)
-def handle_youtube(message):
-    video_id = get_video_id(message.text)
-    if not video_id:
-        bot.reply_to(message, "❌ عذراً، الرابط غير صحيح.")
+def handle_link(message):
+    url = message.text
+    user_data[message.chat.id] = url
+    
+    # إنشاء الأزرار
+    markup = types.InlineKeyboardMarkup()
+    btn_pdf = types.InlineKeyboardButton("📄 Summary PDF", callback_data="gen_pdf")
+    btn_audio = types.InlineKeyboardButton("🎵 Download Audio (MP3)", callback_data="gen_audio")
+    markup.add(btn_pdf, btn_audio)
+    
+    bot.reply_to(message, "What would you like to do with this video?", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    url = user_data.get(call.message.chat.id)
+    if not url:
+        bot.answer_callback_query(call.id, "❌ Error: Link not found. Send the link again.")
         return
 
-    msg = bot.reply_to(message, "⏳ جاري استخراج النص وتلخيصه... انتظر قليلاً.")
-    
+    if call.data == "gen_pdf":
+        bot.answer_callback_query(call.id, "⏳ Generating PDF...")
+        process_pdf(call.message, url)
+        
+    elif call.data == "gen_audio":
+        bot.answer_callback_query(call.id, "⏳ Extracting Audio...")
+        process_audio(call.message, url)
+
+# --- وظيفة تحويل الـ PDF ---
+def process_pdf(message, url):
     try:
-        # 1. سحب النص من اليوتيوب
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ar', 'en'])
-        full_text = " ".join([t['text'] for t in transcript_list])
-
-        # 2. تلخيص النص باستخدام Gemini
-        prompt = f"قم بتلخيص هذا النص بشكل احترافي ومنظم على شكل نقاط رئيسية وشرح مفصل باللغة العربية: {full_text[:30000]}"
-        response = model.generate_content(prompt)
-        summary = response.text
-
-        # 3. إنشاء ملف PDF
+        video_id = url.split("v=")[1].split("&")[0] if "v=" in url else url.split("/")[-1]
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+        full_text = " ".join([t['text'] for t in transcript])
+        
+        response = model.generate_content(f"Summarize this in English: {full_text[:30000]}")
+        
         pdf = FPDF()
         pdf.add_page()
-        # ملاحظة: المكتبة العادية لا تدعم العربي جيداً بدون خطوط، لذا سنكتب النص بشكل مبدئي
         pdf.set_font("Arial", size=12)
-        pdf.multi_cell(0, 10, txt="YouTube Video Summary\n\n" + summary.encode('latin-1', 'ignore').decode('latin-1'))
+        pdf.multi_cell(0, 10, response.text)
         
-        pdf_file = f"{video_id}.pdf"
-        pdf.output(pdf_file)
-
-        # 4. إرسال الملف للمستخدم
-        with open(pdf_file, 'rb') as f:
-            bot.send_document(message.chat.id, f, caption="✅ تم تجهيز ملخص الفيديو بنجاح!")
+        file_name = f"Summary_{video_id}.pdf"
+        pdf.output(file_name)
         
-        os.remove(pdf_file) # حذف الملف بعد الإرسال
-        bot.delete_message(message.chat.id, msg.message_id)
+        with open(file_name, 'rb') as f:
+            bot.send_document(message.chat.id, f)
+        os.remove(file_name)
+    except:
+        bot.send_message(message.chat.id, "❌ Could not generate PDF. Check subtitles.")
 
+# --- وظيفة تحويل الصوت ---
+def process_audio(message, url):
+    try:
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'outtmpl': 'audio_file.%(ext)s',
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        
+        with open('audio_file.mp3', 'rb') as f:
+            bot.send_audio(message.chat.id, f, caption="✅ Your Audio is ready!")
+        os.remove('audio_file.mp3')
     except Exception as e:
-        bot.reply_to(message, f"❌ حدث خطأ: تأكد أن الفيديو يحتوي على ترجمة (Subtitles).\nالتفاصيل: {str(e)[:100]}")
+        bot.send_message(message.chat.id, f"❌ Audio Error: {str(e)[:50]}")
 
 bot.polling()

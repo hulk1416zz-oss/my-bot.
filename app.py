@@ -7,7 +7,7 @@ import http.server
 import socketserver
 import time
 
-# --- خادم الويب (Keep Alive) ---
+# --- خادم الويب (عشان السيرفر ما يطفي) ---
 def keep_alive():
     port = int(os.environ.get("PORT", 8080))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -18,7 +18,7 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# --- الإعدادات النهائية ---
+# --- الإعدادات ---
 BOT_TOKEN = '8675888280:AAHS50UdimC3vlFvBDPQKBotBBZN8q2U-h4'
 GROQ_API_KEY = 'Gsk_csE1OleO06dttE0o05J2WGdyb3FYQzHo5cv0dlRmUIBwEYtNvH57'
 
@@ -28,7 +28,6 @@ user_data = {}
 def split_message(text, chunk_size=4000):
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
-# دالة التواصل مع ذكاء Groq الخارق
 def generate_groq_story(prompt):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -36,12 +35,18 @@ def generate_groq_story(prompt):
         "Content-Type": "application/json"
     }
     data = {
-        "model": "llama-3.3-70b-versatile", # أقوى موديل عندهم حالياً
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7
+        "model": "llama3-8b-8192", # تم تغيير الموديل للأكثر استقراراً
+        "messages": [{"role": "user", "content": prompt}]
     }
     response = requests.post(url, headers=headers, json=data)
-    return response.json()['choices'][0]['message']['content']
+    res_json = response.json()
+    
+    # التأكد من نجاح الطلب
+    if 'choices' in res_json:
+        return res_json['choices'][0]['message']['content']
+    else:
+        # إذا فيه خطأ، يطبع لنا بالضبط وش المشكلة
+        return f"⚠️ API Response: {str(res_json)}"
 
 @bot.message_handler(commands=['start'])
 def welcome(message):
@@ -50,45 +55,44 @@ def welcome(message):
     markup.add(types.InlineKeyboardButton("English 🇺🇸", callback_data="lang_English"),
                types.InlineKeyboardButton("Spanish 🇪🇸", callback_data="lang_Spanish"),
                types.InlineKeyboardButton("French 🇫🇷", callback_data="lang_French"))
-    bot.reply_to(message, "Welcome to AI Novelist Pro! 📚\nPlease select the story language:", reply_markup=markup)
+    bot.reply_to(message, "Welcome to AI Novelist Pro! 📚\nPlease select the language:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('lang_'))
 def choose_length(call):
     user_data[call.message.chat.id]['language'] = call.data.split('_')[1]
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("Short Story (~3 Pages)", callback_data="len_Short Story"),
-               types.InlineKeyboardButton("Detailed Chapter (~6 Pages)", callback_data="len_Detailed Chapter"))
-    bot.edit_message_text("Select the length:", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+    markup.add(types.InlineKeyboardButton("Short Story", callback_data="len_Short Story"),
+               types.InlineKeyboardButton("Detailed Chapter", callback_data="len_Detailed Chapter"))
+    bot.edit_message_text("Select length:", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('len_'))
 def ask_prompt(call):
     user_data[call.message.chat.id]['length'] = call.data.split('_')[1]
-    bot.edit_message_text("Great! Now send me your story title or idea:", chat_id=call.message.chat.id, message_id=call.message.message_id)
+    bot.edit_message_text("Send me your story title or idea:", chat_id=call.message.chat.id, message_id=call.message.message_id)
 
 @bot.message_handler(func=lambda message: True)
 def handle_story(message):
     chat_id = message.chat.id
     if chat_id not in user_data or 'language' not in user_data[chat_id]:
-        bot.reply_to(message, "Please use /start to configure your story.")
+        bot.reply_to(message, "Please use /start first.")
         return
 
-    msg = bot.reply_to(message, "⏳ AI is drafting your masterpiece... (Ultra Fast Mode)")
+    msg = bot.reply_to(message, "⏳ AI is drafting your story... (Stable Mode)")
     
     try:
-        full_prompt = (f"Act as a professional best-selling author. Write a creative {user_data[chat_id]['length']} "
+        full_prompt = (f"Act as a professional author. Write a creative {user_data[chat_id]['length']} "
                        f"in {user_data[chat_id]['language']} about: '{message.text}'. "
-                       "Make it high quality for a Western audience. Output only the story.")
+                       "Output only the story text.")
         
-        story = generate_groq_story(full_prompt)
+        result = generate_groq_story(full_prompt)
         
         bot.delete_message(chat_id, msg.message_id)
-        for chunk in split_message(story):
+        for chunk in split_message(result):
             bot.send_message(chat_id, chunk)
-            
         user_data[chat_id] = {}
             
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Error: {str(e)[:100]}")
+        bot.send_message(chat_id, f"❌ System Error: {str(e)}")
 
 while True:
     try: bot.polling(none_stop=True)

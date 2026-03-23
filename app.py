@@ -1,41 +1,65 @@
 import telebot
 import google.generativeai as genai
+from youtube_transcript_api import YouTubeTranscriptApi
+from fpdf import FPDF
 import os
+import re
 
-# --- الإعدادات (التوكنات) ---
-# ملاحظة: يفضل مستقبلاً وضعها في Environment Variables للأمان
+# --- الإعدادات ---
 BOT_TOKEN = '8650413337:AAGsT4LjOfQUuOT_tP8-9tdio2dg71OuqTE'
 GEMINI_API_KEY = 'AIzaSyB_Q2nleMzyVncqfwgnrTSEnaO4r4jr0JY'
 
-# تشغيل البوت والذكاء الاصطناعي
 bot = telebot.TeleBot(BOT_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-pro')
 
-# --- الأوامر ---
+# دالة لاستخراج ID الفيديو من الرابط
+def get_video_id(url):
+    pattern = r'(?:v=|\/)([0-9A-Za-z_-]{11}).*'
+    match = re.search(pattern, url)
+    return match.group(1) if match else None
 
-# رد عند كتابة /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    welcome_text = (
-        "🚀 أهلاً بك في بوت الذكاء الاصطناعي!\n"
-        "أنا شغال الآن على سيرفر Render المستقر.\n"
-        "أرسل لي أي سؤال وسأجيبك فوراً باستخدام Gemini."
-    )
-    bot.reply_to(message, welcome_text)
+    bot.reply_to(message, "🎯 أهلاً بك! أرسل لي رابط فيديو يوتيوب وسأقوم بتحويله إلى ملخص PDF احترافي فوراً.")
 
-# الرد على الرسائل النصية
-@bot.message_handler(func=lambda message: True)
-def chat_with_gemini(message):
+@bot.message_handler(func=lambda message: 'youtube.com' in message.text or 'youtu.be' in message.text)
+def handle_youtube(message):
+    video_id = get_video_id(message.text)
+    if not video_id:
+        bot.reply_to(message, "❌ عذراً، الرابط غير صحيح.")
+        return
+
+    msg = bot.reply_to(message, "⏳ جاري استخراج النص وتلخيصه... انتظر قليلاً.")
+    
     try:
-        # إرسال النص لـ Gemini للحصول على رد
-        response = model.generate_content(message.text)
-        bot.reply_to(message, response.text)
-    except Exception as e:
-        bot.reply_to(message, "عذراً، حدث خطأ بسيط في معالجة طلبك. جرب مرة أخرى.")
-        print(f"Error: {e}")
+        # 1. سحب النص من اليوتيوب
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ar', 'en'])
+        full_text = " ".join([t['text'] for t in transcript_list])
 
-# تشغيل البوت باستمرار
-if __name__ == "__main__":
-    print("البوت بدأ العمل بنجاح...")
-    bot.polling(none_stop=True)
+        # 2. تلخيص النص باستخدام Gemini
+        prompt = f"قم بتلخيص هذا النص بشكل احترافي ومنظم على شكل نقاط رئيسية وشرح مفصل باللغة العربية: {full_text[:30000]}"
+        response = model.generate_content(prompt)
+        summary = response.text
+
+        # 3. إنشاء ملف PDF
+        pdf = FPDF()
+        pdf.add_page()
+        # ملاحظة: المكتبة العادية لا تدعم العربي جيداً بدون خطوط، لذا سنكتب النص بشكل مبدئي
+        pdf.set_font("Arial", size=12)
+        pdf.multi_cell(0, 10, txt="YouTube Video Summary\n\n" + summary.encode('latin-1', 'ignore').decode('latin-1'))
+        
+        pdf_file = f"{video_id}.pdf"
+        pdf.output(pdf_file)
+
+        # 4. إرسال الملف للمستخدم
+        with open(pdf_file, 'rb') as f:
+            bot.send_document(message.chat.id, f, caption="✅ تم تجهيز ملخص الفيديو بنجاح!")
+        
+        os.remove(pdf_file) # حذف الملف بعد الإرسال
+        bot.delete_message(message.chat.id, msg.message_id)
+
+    except Exception as e:
+        bot.reply_to(message, f"❌ حدث خطأ: تأكد أن الفيديو يحتوي على ترجمة (Subtitles).\nالتفاصيل: {str(e)[:100]}")
+
+bot.polling()

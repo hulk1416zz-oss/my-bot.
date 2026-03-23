@@ -7,7 +7,7 @@ import http.server
 import socketserver
 import time
 
-# --- 1. خادم الويب (لضمان بقاء السيرفر مستيقظ) ---
+# --- خادم الويب (عشان السيرفر ما ينام) ---
 def keep_alive():
     port = int(os.environ.get("PORT", 8080))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -18,20 +18,21 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# --- 2. الإعدادات ---
+# --- مفاتيحك الخاصة (تم دمجها بنجاح) ---
 BOT_TOKEN = '8675888280:AAHS50UdimC3vlFvBDPQKBotBBZN8q2U-h4' 
-GEMINI_API_KEY = 'AIzaSyB_Q2nleMzyVncqfwgnrTSEnaO4r4jr0JY' 
+GEMINI_API_KEY = 'AIzaSyDV9ta8FFiIBKIqNMIcCVlCp_-h8GJhXtc' 
 
 bot = telebot.TeleBot(BOT_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-pro')
+
+# استخدام أسرع وأحدث نموذج ذكاء اصطناعي
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 user_data = {}
 
 def split_message(text, chunk_size=4000):
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
-# --- 3. واجهة البوت ---
 @bot.message_handler(commands=['start'])
 def welcome(message):
     user_data[message.chat.id] = {} 
@@ -80,7 +81,7 @@ def generate_story(message):
         Act as a New York Times bestselling author. Write a highly engaging and creative {length} based strictly on this idea/title: '{user_idea}'.
         The story MUST be written in {lang}.
         Make the tone suitable for a mature Western audience. Include rich environmental descriptions, compelling character hooks, and natural dialogue.
-        Output ONLY the story text. Do not include any introductory or concluding remarks.
+        Output ONLY the story text. Do not include any introductory or concluding remarks or markdown formatting like bolding unless necessary.
         """
         
         response = model.generate_content(prompt)
@@ -94,7 +95,7 @@ def generate_story(message):
         user_data[chat_id] = {}
             
     except Exception as e:
-        bot.send_message(chat_id, "❌ Server is currently overloaded. Please try again in a few moments.")
+        bot.send_message(chat_id, f"❌ Google API Error: {str(e)[:150]}")
 
 while True:
     try: bot.polling(none_stop=True)

@@ -7,7 +7,7 @@ import http.server
 import socketserver
 import time
 
-# --- خادم الويب (Keep Alive) ---
+# --- خادم الويب (لضمان بقاء السيرفر مستيقظ) ---
 def keep_alive():
     port = int(os.environ.get("PORT", 8080))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -18,7 +18,7 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# --- البيانات (تم التحقق منها 100%) ---
+# --- البيانات (تم دمج مفاتيحك الشخصية هنا) ---
 BOT_TOKEN = '8675888280:AAHS50UdimC3vlFvBDPQKBotBBZN8q2U-h4'
 GROQ_API_KEY = 'Gsk_csE1OleO06dttE0o05J2WGdyb3FYQzHo5cv0dlRmUIBwEYtNvH57'
 
@@ -75,7 +75,7 @@ def handle_story(message):
         bot.reply_to(message, "Please use /start first.")
         return
 
-    msg = bot.reply_to(message, "⏳ AI is drafting your story... (Stable Mode)")
+    msg = bot.reply_to(message, "⏳ AI is drafting your story... (Ultra Fast)")
     
     try:
         full_prompt = (f"Act as a professional author. Write a creative {user_data[chat_id]['length']} "
@@ -90,7 +90,7 @@ def handle_story(message):
         user_data[chat_id] = {}
             
     except Exception as e:
-        bot.send_message(chat_id, f"❌ System Error: {str(e)}")
+        bot.send_message(chat_id, f"❌ Error: {str(e)}")
 
 while True:
     try: bot.polling(none_stop=True)

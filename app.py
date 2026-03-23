@@ -4,22 +4,22 @@ import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
 import yt_dlp
 import os
-import time
 import threading
 import http.server
 import socketserver
 
-# --- سيرفر وهمي مدمج عشان Render يسكت ويعطيك Live ---
+# --- سيرفر وهمي لإسكات Render ---
 def keep_alive():
     port = int(os.environ.get("PORT", 8080))
     Handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", port), Handler) as httpd:
+    # استخدام 0.0.0.0 عشان السيرفر يمسك البورت صح
+    with socketserver.TCPServer(("0.0.0.0", port), Handler) as httpd:
         httpd.serve_forever()
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# --- إعدادات البوت ---
-BOT_TOKEN = '8650413337:AAGsT4LjOfQUuOT_tP8-9tdio2dg71OuqTE'
+# --- التوكن الجديد ---
+BOT_TOKEN = '8650413337:AAEzRMp-_NVTW3JtzSdK-G-6fv4NzNkExTk'
 GEMINI_API_KEY = 'AIzaSyB_Q2nleMzyVncqfwgnrTSEnaO4r4jr0JY'
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -36,7 +36,7 @@ def welcome(message):
 def ask_options(message):
     user_links[message.chat.id] = message.text
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("📄 Summary PDF", callback_data="pdf"),
+    markup.add(types.InlineKeyboardButton("📄 Summary (TXT)", callback_data="pdf"),
                types.InlineKeyboardButton("🎵 Audio MP3", callback_data="audio"))
     bot.reply_to(message, "What do you need?", reply_markup=markup)
 
@@ -53,7 +53,9 @@ def handle_query(call):
             transcript = next(iter(transcript_list)) 
             data = transcript.fetch()
             text = " ".join([i['text'] for i in data])
+            
             res = model.generate_content(f"Summarize this in English with bullet points: {text[:25000]}")
+            
             file_name = f"Summary_{v_id}.txt"
             with open(file_name, "w", encoding="utf-8") as f:
                 f.write(res.text)
@@ -61,7 +63,7 @@ def handle_query(call):
                 bot.send_document(call.message.chat.id, f, caption="✅ Summary Done!")
             os.remove(file_name)
         except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ PDF Error.")
+            bot.send_message(call.message.chat.id, "❌ Error: Video must have subtitles/CC enabled.")
 
     elif call.data == "audio":
         bot.send_message(call.message.chat.id, "⏳ Extracting Audio...")
@@ -78,11 +80,6 @@ def handle_query(call):
                 bot.send_audio(call.message.chat.id, f)
             os.remove('song.mp3')
         except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ Audio Error.")
+            bot.send_message(call.message.chat.id, "❌ Audio Error: YouTube blocked the download for this specific video. Try another one.")
 
-# --- نظام قاهر الـ 409 (مضاد للتعليق) ---
-while True:
-    try:
-        bot.polling(none_stop=True)
-    except Exception as e:
-        time.sleep(3) # إذا لقى نسخة ثانية يتهاوش معها، يوقف 3 ثواني ويرجع يشبك غصب
+bot.polling(none_stop=True)

@@ -7,7 +7,7 @@ import http.server
 import socketserver
 import time
 
-# --- خادم الويب (لضمان بقاء السيرفر مستيقظ) ---
+# --- خادم الويب (Keep Alive) ---
 def keep_alive():
     port = int(os.environ.get("PORT", 8080))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -18,9 +18,10 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# --- البيانات (تم دمج مفاتيحك الشخصية هنا) ---
+# --- البيانات الحقيقية والمحدثة ---
 BOT_TOKEN = '8675888280:AAHS50UdimC3vlFvBDPQKBotBBZN8q2U-h4'
-GROQ_API_KEY = 'Gsk_csE1OleO06dttE0o05J2WGdyb3FYQzHo5cv0dlRmUIBwEYtNvH57'
+# المفتاح الجديد اللي نسخته من "العلامة"
+GROQ_API_KEY = 'Gsk_VtYsUGL3Ko09LkoefCBGWGdyb3FYG70p30hDhVtqDrFx7xPMeVmy'
 
 bot = telebot.TeleBot(BOT_TOKEN)
 user_data = {}
@@ -31,7 +32,7 @@ def split_message(text, chunk_size=4000):
 def generate_groq_story(prompt):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Authorization": f"Bearer {GROQ_API_KEY.strip()}",
         "Content-Type": "application/json"
     }
     data = {
@@ -44,7 +45,7 @@ def generate_groq_story(prompt):
     if 'choices' in res_json:
         return res_json['choices'][0]['message']['content']
     else:
-        return f"⚠️ API Response: {str(res_json)}"
+        return f"⚠️ API Response Error: {str(res_json)}"
 
 @bot.message_handler(commands=['start'])
 def welcome(message):
@@ -66,7 +67,7 @@ def choose_length(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('len_'))
 def ask_prompt(call):
     user_data[call.message.chat.id]['length'] = call.data.split('_')[1]
-    bot.edit_message_text("Send me your story title or idea:", chat_id=call.message.chat.id, message_id=call.message.message_id)
+    bot.edit_message_text("Great! Now send me your story title or idea:", chat_id=call.message.chat.id, message_id=call.message.message_id)
 
 @bot.message_handler(func=lambda message: True)
 def handle_story(message):
@@ -75,7 +76,7 @@ def handle_story(message):
         bot.reply_to(message, "Please use /start first.")
         return
 
-    msg = bot.reply_to(message, "⏳ AI is drafting your story... (Ultra Fast)")
+    msg = bot.reply_to(message, "⏳ AI is drafting your story... (Fast Mode)")
     
     try:
         full_prompt = (f"Act as a professional author. Write a creative {user_data[chat_id]['length']} "
@@ -90,7 +91,7 @@ def handle_story(message):
         user_data[chat_id] = {}
             
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Error: {str(e)}")
+        bot.send_message(chat_id, f"❌ System Error: {str(e)}")
 
 while True:
     try: bot.polling(none_stop=True)

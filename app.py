@@ -7,7 +7,7 @@ import http.server
 import socketserver
 import time
 
-# --- خادم الويب (عشان السيرفر ما ينام) ---
+# --- خادم الويب (عشان السيرفر يبقى صاحي) ---
 def keep_alive():
     port = int(os.environ.get("PORT", 8080))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -18,14 +18,14 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# --- مفاتيحك الخاصة (تم دمجها بنجاح) ---
+# --- الإعدادات (مفاتيحك جاهزة) ---
 BOT_TOKEN = '8675888280:AAHS50UdimC3vlFvBDPQKBotBBZN8q2U-h4' 
-GEMINI_API_KEY = 'AIzaSyDV9ta8FFiIBKIqNMIcCVlCp_-h8GJhXtc' 
+GEMINI_API_KEY = 'AIzaSyAKLQVHIjb9PZyBOr2YmCG6lEIxoutxC3w' 
 
 bot = telebot.TeleBot(BOT_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 
-# استخدام أسرع وأحدث نموذج ذكاء اصطناعي
+# استخدام أسرع نموذج لتجنب أي تأخير
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 user_data = {}
@@ -40,62 +40,48 @@ def welcome(message):
     markup.add(types.InlineKeyboardButton("English 🇺🇸", callback_data="lang_English"),
                types.InlineKeyboardButton("Spanish 🇪🇸", callback_data="lang_Spanish"),
                types.InlineKeyboardButton("French 🇫🇷", callback_data="lang_French"))
-    bot.reply_to(message, "Welcome to the AI Author Bot! 📚\n\nPlease select the language for your story:", reply_markup=markup)
+    bot.reply_to(message, "Welcome to AI Novelist Pro! 📚\nPlease select the story language:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('lang_'))
 def choose_length(call):
-    lang = call.data.split('_')[1]
-    user_data[call.message.chat.id]['language'] = lang
-    
+    user_data[call.message.chat.id]['language'] = call.data.split('_')[1]
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Short Story (~3 Pages)", callback_data="len_Short Story"),
                types.InlineKeyboardButton("Detailed Chapter (~6 Pages)", callback_data="len_Detailed Chapter"))
-    
-    bot.edit_message_text(f"Language set to: **{lang}** ✅\n\nNow, select the length of your text:",
-                          chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+    bot.edit_message_text("Now, select the length of your text:", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('len_'))
 def ask_prompt(call):
-    length = call.data.split('_')[1]
-    user_data[call.message.chat.id]['length'] = length
-    
-    bot.edit_message_text(f"Length set to: **{length}** ✅\n\nGreat! Now send me the title, idea, or plot of your story:",
-                          chat_id=call.message.chat.id, message_id=call.message.message_id)
+    user_data[call.message.chat.id]['length'] = call.data.split('_')[1]
+    bot.edit_message_text("Great! Now send me your story title or idea:", chat_id=call.message.chat.id, message_id=call.message.message_id)
 
 @bot.message_handler(func=lambda message: True)
 def generate_story(message):
     chat_id = message.chat.id
-    
-    if chat_id not in user_data or 'language' not in user_data[chat_id] or 'length' not in user_data[chat_id]:
-        bot.reply_to(message, "Please use /start to configure your story settings first.")
+    if chat_id not in user_data or 'language' not in user_data[chat_id]:
+        bot.reply_to(message, "Please use /start to configure your story.")
         return
 
-    msg = bot.reply_to(message, "⏳ The AI is currently writing your masterpiece. This might take a minute...")
-    
-    lang = user_data[chat_id]['language']
-    length = user_data[chat_id]['length']
-    user_idea = message.text
+    msg = bot.reply_to(message, "⏳ AI is drafting your masterpiece... please wait.")
     
     try:
-        prompt = f"""
-        Act as a New York Times bestselling author. Write a highly engaging and creative {length} based strictly on this idea/title: '{user_idea}'.
-        The story MUST be written in {lang}.
-        Make the tone suitable for a mature Western audience. Include rich environmental descriptions, compelling character hooks, and natural dialogue.
-        Output ONLY the story text. Do not include any introductory or concluding remarks or markdown formatting like bolding unless necessary.
-        """
+        # صياغة الطلب بشكل يضمن جودة عالية جداً للسوق الغربي
+        prompt = (f"Write a professional, creative, and highly engaging {user_data[chat_id]['length']} "
+                  f"in {user_data[chat_id]['language']} based on: '{message.text}'. "
+                  f"Style: Award-winning best-selling author.")
         
         response = model.generate_content(prompt)
         story = response.text
         
         bot.delete_message(chat_id, msg.message_id) 
-        
         for chunk in split_message(story):
             bot.send_message(chat_id, chunk)
             
+        # تصفير البيانات للطلب القادم
         user_data[chat_id] = {}
             
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Google API Error: {str(e)[:150]}")
+        bot.send_message(chat_id, f"❌ System Error: {str(e)[:100]}")
 
 while True:
     try: bot.polling(none_stop=True)

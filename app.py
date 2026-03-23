@@ -9,7 +9,6 @@ import http.server
 import socketserver
 import time
 
-# --- الحفاظ على السيرفر شغال (Render) ---
 def keep_alive():
     port = int(os.environ.get("PORT", 8080))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -20,7 +19,6 @@ def keep_alive():
 
 threading.Thread(target=keep_alive, daemon=True).start()
 
-# --- مفاتيحك الخاصة ---
 BOT_TOKEN = '8650413337:AAEzRMp-_NVTW3JtzSdK-G-6fv4NzNkExTk'
 GEMINI_API_KEY = 'AIzaSyB_Q2nleMzyVncqfwgnrTSEnaO4r4jr0JY'
 
@@ -47,19 +45,19 @@ def handle(call):
     url = user_links.get(call.message.chat.id)
     if not url: return
     
-    # تحديد ملف الكوكيز إذا موجود
     c_file = 'cookies.txt' if os.path.exists('cookies.txt') and os.path.getsize('cookies.txt') > 0 else None
 
     if call.data == "pdf":
         bot.send_message(call.message.chat.id, "⏳ Bypassing restrictions for Summary...")
         try:
             v_id = url.split("v=")[1].split("&")[0] if "v=" in url else url.split("/")[-1].split("?")[0]
-            try:
-                t_list = YouTubeTranscriptApi.list_transcripts(v_id, cookies=c_file)
-            except:
-                t_list = YouTubeTranscriptApi.list_transcripts(v_id) # خطة بديلة بدون كوكيز
+            
+            # التعديل البرمجي الصحيح لمكتبة النصوص
+            if c_file:
+                data = YouTubeTranscriptApi.get_transcript(v_id, cookies=c_file)
+            else:
+                data = YouTubeTranscriptApi.get_transcript(v_id)
                 
-            data = next(iter(t_list)).fetch()
             text = " ".join([i['text'] for i in data])
             res = model.generate_content(f"Summarize in Arabic as bullet points: {text[:20000]}")
             
@@ -67,30 +65,28 @@ def handle(call):
             with open("sum.txt", "rb") as f: bot.send_document(call.message.chat.id, f, caption="✅ Summary extracted successfully!")
             os.remove("sum.txt")
         except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ PDF Error details: {str(e)[:50]}") # هذا بيعلمنا وش المشكلة بالضبط لو رفض
+            bot.send_message(call.message.chat.id, f"❌ PDF Error details: {str(e)[:50]}") 
 
     elif call.data == "audio":
         bot.send_message(call.message.chat.id, "⏳ Hacking YouTube Audio...")
         try:
-            # إعدادات الاختراق وتخطي الحظر
             opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': 's.mp3',
                 'cookiefile': c_file,
-                'source_address': '0.0.0.0', # إجبار السيرفر على IPv4 لتخطي حظر Render
-                'geo_bypass': True, # تخطي الحظر الجغرافي
+                'source_address': '0.0.0.0',
+                'geo_bypass': True,
                 'nocheckcertificate': True,
                 'quiet': True,
-                'extractor_args': {'youtube': {'player_client': ['android', 'web']}}, # انتحال شخصية أندرويد
+                'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
                 'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
             }
             with yt_dlp.YoutubeDL(opts) as ydl: ydl.download([url])
             with open('s.mp3', 'rb') as f: bot.send_audio(call.message.chat.id, f, caption="✅ Audio extracted!")
             os.remove('s.mp3')
         except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ Audio Error details: {str(e)[:50]}") # طباعة الخطأ الحقيقي
+            bot.send_message(call.message.chat.id, f"❌ Audio Error details: {str(e)[:50]}")
 
-# --- التشغيل المستمر ---
 while True:
     try: bot.polling(none_stop=True)
     except: time.sleep(3)

@@ -1,12 +1,11 @@
 import telebot
 from telebot import types
 import google.generativeai as genai
-from youtube_transcript_api import YouTubeTranscriptApi
-from fpdf import FPDF
+from youtube_transcript_api import YouTubeTranscriptApi  # تأكد من هذا السطر
 import yt_dlp
 import os
 
-# --- Setup ---
+# --- Settings ---
 BOT_TOKEN = '8650413337:AAGsT4LjOfQUuOT_tP8-9tdio2dg71OuqTE'
 GEMINI_API_KEY = 'AIzaSyB_Q2nleMzyVncqfwgnrTSEnaO4r4jr0JY'
 
@@ -14,60 +13,56 @@ bot = telebot.TeleBot(BOT_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-pro')
 
-user_data = {}
+user_links = {}
 
 @bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.reply_to(message, "🌟 Welcome! Send me a YouTube link to get a PDF summary or Audio.")
+def welcome(message):
+    bot.reply_to(message, "🌟 Bot is ready! Send me any YouTube link.")
 
-@bot.message_handler(func=lambda message: 'youtube.com' in message.text or 'youtu.be' in message.text)
-def handle_link(message):
-    url = message.text
-    user_data[message.chat.id] = url
+@bot.message_handler(func=lambda m: 'youtube.com' in m.text or 'youtu.be' in m.text)
+def ask_options(message):
+    user_links[message.chat.id] = message.text
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("📄 Summary PDF", callback_data="gen_pdf"),
-               types.InlineKeyboardButton("🎵 Audio MP3", callback_data="gen_audio"))
-    bot.reply_to(message, "Choose an option:", reply_markup=markup)
+    markup.add(types.InlineKeyboardButton("📄 Summary PDF", callback_data="pdf"),
+               types.InlineKeyboardButton("🎵 Audio MP3", callback_data="audio"))
+    bot.reply_to(message, "What do you need?", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    url = user_data.get(call.message.chat.id)
+def handle_query(call):
+    url = user_links.get(call.message.chat.id)
     if not url: return
 
-    if call.data == "gen_pdf":
-        bot.send_message(call.message.chat.id, "⏳ Processing PDF Summary...")
+    if call.data == "pdf":
+        bot.send_message(call.message.chat.id, "⏳ Generating Summary...")
         try:
-            # تصحيح الـ ID وسحب النص
-            video_id = url.split("v=")[1].split("&")[0] if "v=" in url else url.split("/")[-1].split("?")[0]
-            # هنا التعديل الصحيح لاستدعاء المكتبة
-            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
-            full_text = " ".join([t['text'] for t in transcript])
+            # استخراج الـ ID بدقة
+            v_id = url.split("v=")[1].split("&")[0] if "v=" in url else url.split("/")[-1].split("?")[0]
             
-            response = model.generate_content(f"Summarize in English with bullet points: {full_text[:30000]}")
+            # السطر المنقذ (تصحيح الخطأ اللي تعبك)
+            data = YouTubeTranscriptApi.get_transcript(v_id, languages=['en'])
+            text = " ".join([i['text'] for i in data])
             
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-            pdf.multi_cell(0, 10, response.text.encode('latin-1', 'ignore').decode('latin-1'))
+            res = model.generate_content(f"Summarize this lecture in English with bullet points: {text[:25000]}")
             
-            file_name = f"Summary_{video_id}.pdf"
-            pdf.output(file_name)
-            with open(file_name, 'rb') as f:
-                bot.send_document(call.message.chat.id, f)
-            os.remove(file_name)
+            with open("summary.txt", "w") as f:
+                f.write(res.text)
+            
+            with open("summary.txt", "rb") as f:
+                bot.send_document(call.message.chat.id, f, caption="✅ Summary Done!")
+            os.remove("summary.txt")
         except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ Error: {str(e)[:100]}")
+            bot.send_message(call.message.chat.id, "❌ Error: Video must have English CC/Subtitles.")
 
-    elif call.data == "gen_audio":
-        bot.send_message(call.message.chat.id, "⏳ Extracting Audio... (May take a minute)")
+    elif call.data == "audio":
+        bot.send_message(call.message.chat.id, "⏳ Extracting Audio...")
         try:
-            ydl_opts = {'format': 'bestaudio/best', 'outtmpl': 'audio.mp3'}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            opts = {'format': 'bestaudio/best', 'outtmpl': 'song.mp3', 'noplaylist': True}
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
-            with open('audio.mp3', 'rb') as f:
+            with open('song.mp3', 'rb') as f:
                 bot.send_audio(call.message.chat.id, f)
-            os.remove('audio.mp3')
-        except Exception as e:
-            bot.send_message(call.message.chat.id, "❌ Audio error. Try a shorter video.")
+            os.remove('song.mp3')
+        except:
+            bot.send_message(call.message.chat.id, "❌ Audio error. Video might be too long.")
 
 bot.polling(none_stop=True)

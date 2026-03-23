@@ -1,7 +1,7 @@
 import telebot
 from telebot import types
 import google.generativeai as genai
-from youtube_transcript_api import YouTubeTranscriptApi  # تأكد من هذا السطر
+from youtube_transcript_api import YouTubeTranscriptApi
 import yt_dlp
 import os
 
@@ -35,23 +35,30 @@ def handle_query(call):
     if call.data == "pdf":
         bot.send_message(call.message.chat.id, "⏳ Generating Summary...")
         try:
-            # استخراج الـ ID بدقة
+            # استخراج الـ ID
             v_id = url.split("v=")[1].split("&")[0] if "v=" in url else url.split("/")[-1].split("?")[0]
             
-            # السطر المنقذ (تصحيح الخطأ اللي تعبك)
-            data = YouTubeTranscriptApi.get_transcript(v_id, languages=['en'])
+            # --- الحل الجذري للمشكلة ---
+            # استخدام الطريقة الجديدة كلياً للمكتبة بعد التحديث
+            api = YouTubeTranscriptApi()
+            transcript_list = api.list(v_id)
+            transcript = transcript_list.find_transcript(['en'])
+            data = transcript.fetch()
+            # --------------------------
+            
             text = " ".join([i['text'] for i in data])
             
-            res = model.generate_content(f"Summarize this lecture in English with bullet points: {text[:25000]}")
+            res = model.generate_content(f"Summarize this in English with bullet points: {text[:25000]}")
             
-            with open("summary.txt", "w") as f:
+            file_name = f"Summary_{v_id}.txt"
+            with open(file_name, "w", encoding="utf-8") as f:
                 f.write(res.text)
             
-            with open("summary.txt", "rb") as f:
+            with open(file_name, "rb") as f:
                 bot.send_document(call.message.chat.id, f, caption="✅ Summary Done!")
-            os.remove("summary.txt")
+            os.remove(file_name)
         except Exception as e:
-            bot.send_message(call.message.chat.id, "❌ Error: Video must have English CC/Subtitles.")
+            bot.send_message(call.message.chat.id, f"❌ Error extracting transcript. Details: {str(e)[:50]}")
 
     elif call.data == "audio":
         bot.send_message(call.message.chat.id, "⏳ Extracting Audio...")
@@ -62,7 +69,7 @@ def handle_query(call):
             with open('song.mp3', 'rb') as f:
                 bot.send_audio(call.message.chat.id, f)
             os.remove('song.mp3')
-        except:
-            bot.send_message(call.message.chat.id, "❌ Audio error. Video might be too long.")
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ Audio error. Details: {str(e)[:50]}")
 
 bot.polling(none_stop=True)
